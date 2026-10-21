@@ -125,21 +125,21 @@
       # the ground next to the start zone. 30 deg steps with a 66 deg camera view
       # cover about -93..+93 deg at 1.0-2.2 m ahead.
       survey_headings: [-45.0, 0.0, 45.0]
-      survey_hold_sec: 0.6
-      survey_turn_rate: 0.50
+      survey_hold_sec: 0.8
+      survey_turn_rate: 0.35
       survey_timeout_sec: 60.0
       leg_timeout_sec: 240.0   # per attempt
       # Excavate -> carry -> dump cycles. num_cycles is the MAXIMUM; another cycle
       # starts only if elapsed mission time + the longest cycle so far + the return
       # reserve fits time_budget_sec (rulebook prelims: 10 min run). Full Autonomy
       # needs >= 2 full cycles for 600 points (rulebook, Autonomous Operations).
-      num_cycles: 2
+      num_cycles: 1
       time_budget_sec: 360.0
       return_reserve_sec: 90.0  # kept for the return leg (measured 60-90 s + retries)
       first_cycle_estimate_sec: 90.0   # until a cycle has been measured
       # Between cycles: back straight up from the construction goal to the
       # excavation goal (mission_logic.reverse_distance), costmap-checked.
-      reverse_speed: 0.20
+      reverse_speed: 0.15
       reverse_timeout_sec: 20.0
       max_dig_attempts: 2      # dig passes per cycle before the cycle is failed
       # Dead-reckoning budget: no new cycle if the drift added by the cycles,
@@ -153,9 +153,9 @@
       # is paused, the rover faces heading + each offset (costmap-checked), holds, and
       # resumes the same goal. The +-33 deg camera otherwise sees ground beside the
       # route only at the image edge (seed 12: crater_2, a wheel in it after the route
-      # turned toward it). [] disables.
+      # turned toward it). [0.0] or [] disables.
       scan_spacing: 1.2
-      scan_offsets_deg: []
+      scan_offsets_deg: [0.0]
       scan_hold_sec: 1.0
       scan_timeout_sec: 30.0
 

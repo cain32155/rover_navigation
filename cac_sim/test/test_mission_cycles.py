@@ -214,6 +214,16 @@ def test_scan_stop_turns_both_ways_and_resumes_without_using_an_attempt(node):
     assert not node._start_scan(node._leg)               # same place: no second scan
 
 
+def test_scan_stop_disabled_by_zero_offset(node):
+    node.set_parameters([Parameter('mission.scan_offsets_deg', value=[0.0])])
+    node._pose = lambda: (-0.5, 0.0, 0.0)
+    node._leg = {'name': 'excavation', 'candidates': [(2.35, 0.0, 0.0)], 'cand': 0, 'attempt': 1,
+                 'phase': 'navigating', 'sent_at': node._now_s(), 'next_block_check': node._now_s() + 100.0,
+                 'blocked_checks': 0, 'final_turn_done': True}
+    assert not node._start_scan(node._leg)
+    assert node._leg['phase'] == 'navigating'
+
+
 def _run_cycles(node, rot_per_cycle):
     node._max_cycles = 10
     node._rot_since_fix = 13.0                     # after crossing the obstacle zone with scan stops

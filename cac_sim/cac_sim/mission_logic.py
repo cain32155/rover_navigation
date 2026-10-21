@@ -129,7 +129,7 @@ def candidate_goals(leg: str, goal: tuple, z: Zones, fp: Footprint) -> list:
     small along x, so the alternates stay where the leg needs the rover."""
     x, y, yaw = goal
     out = [goal]
-    for dy in (0.5, -0.5, 1.0, -1.0, 1.5, -1.5):
+    for dy in (0.25, -0.25, 0.5, -0.5, 1.0, -1.0, 1.5, -1.5):
         for dx in (0.0, 0.1, -0.1):
             cand = (x + dx, y + dy, yaw)
             if zone_ok(leg, cand, fp, z) and _keeps_off_walls(cand, fp, z):

@@ -34,18 +34,16 @@ The deployable navigation package for the real rover running on an onboard compu
 The mission parameters in `cac_sim/config/arena_params.yaml` and `cac_sim/config/nav2_params.yaml` have been optimized to reduce overall mission runtime from ~10 minutes down to **5–6 minutes**:
 
 1. **Mid-Path Sweeps Disabled**:
-   - `mission.scan_offsets_deg: []` (turned off the periodic $\pm 50^\circ$ scan stops every 1.2 m that added ~15 seconds per stop).
-2. **Optimized Time Budget & Capped Cycles**:
-   - `mission.num_cycles: 2` (awards full autonomy points according to competition criteria while eliminating runaway multi-cycle loops).
-   - `mission.time_budget_sec: 360.0` (6 minutes maximum mission time).
-   - `mission.return_reserve_sec: 90.0` (time reserved for returning to the start zone).
-3. **Increased Controller Driving Speeds**:
-   - `desired_linear_vel: 0.35` m/s (increased from 0.20 m/s for faster transit).
-   - `regulated_linear_scaling_min_speed: 0.20` m/s.
-4. **Faster Initial Survey & Recovery**:
-   - Initial obstacle survey reduced to 3 headings (`[-45.0, 0.0, 45.0]`) with 0.6 s hold time.
-   - Survey turn rate increased to `0.50` rad/s.
-   - Reverse speed between cycles increased to `0.20` m/s.
+   - `mission.scan_offsets_deg: [0.0]` (disables the periodic $\pm 50^\circ$ scan stops every 1.2 m while keeping a valid `DOUBLE_ARRAY` type in ROS 2 YAML parsing).
+2. **Shortest-Path Global Planning & Costmap Tuning**:
+   - `inflation_layer.cost_scaling_factor: 3.5` and `SmacPlannerLattice.cost_penalty: 1.5` so the planner routes through direct collision-free central corridors instead of taking long perimeter detours.
+3. **Single-Cycle Collect $\rightarrow$ Dump $\rightarrow$ Return Flow**:
+   - `mission.num_cycles: 1`, `mission.time_budget_sec: 360.0`, `mission.return_reserve_sec: 90.0`.
+   - Early arrival acceptance in `_run_leg()` when the rover is already inside the target zone and a nearby obstacle enters the goal's padding, plus `±0.25 m` lateral candidate goals.
+4. **Controller & No-Slip Rotation Speeds**:
+   - `desired_linear_vel: 0.30` m/s and `regulated_linear_scaling_min_speed: 0.15` m/s.
+   - `rotate_to_heading_angular_vel: 0.35` rad/s and `survey_turn_rate: 0.35` rad/s (capped at the measured no-slip limit on sand to prevent lateral odometry drift).
+   - Initial obstacle survey set to 3 headings (`[-45.0, 0.0, 45.0]`) with `0.8 s` hold time.
 
 ---
 

@@ -532,12 +532,26 @@ class MissionStateMachine(Node):
             leg['blocked_checks'] = leg['blocked_checks'] + 1 if self._goal_blocked(
                 leg['candidates'][leg['cand']]) else 0
             if leg['blocked_checks'] >= 2:
-                self.get_logger().warn(f'[{leg["name"]}] goal {leg["candidates"][leg["cand"]]} is now blocked '
-                                       'in the costmap; cancelling it.')
                 if self._goal_handle is not None:
                     self._goal_handle.cancel_goal_async()
                 self._goal_seq += 1
-                self._nav_result = (GoalStatus.STATUS_ABORTED, ml.GOAL_OCCUPIED)
+                pose = self._pose()
+                pad = self.get_parameter('mission.footprint_padding').value
+                goal_cand = leg['candidates'][leg['cand']]
+                if (pose is not None
+                        and ml.arrival_ok(goal_cand, pose,
+                                          self.get_parameter('mission.arrival_xy_tolerance').value,
+                                          self.get_parameter('mission.arrival_yaw_tolerance').value)
+                        and ml.zone_ok(leg['name'], pose, self._fp, self._zones,
+                                       cross_margin=self.get_parameter('mission.zone_cross_margin').value)
+                        and (self._costmap is None or not ml.lethal_cells(self._costmap, pose, self._fp, pad))):
+                    self.get_logger().info(f'[{leg["name"]}] goal {goal_cand} became blocked, but current pose '
+                                           'already satisfies arrival and zone checks; accepting arrival.')
+                    self._nav_result = (GoalStatus.STATUS_SUCCEEDED, ml.NONE)
+                else:
+                    self.get_logger().warn(f'[{leg["name"]}] goal {goal_cand} is now blocked '
+                                           'in the costmap; cancelling it.')
+                    self._nav_result = (GoalStatus.STATUS_ABORTED, ml.GOAL_OCCUPIED)
         timed_out = self._now_s() - leg['sent_at'] > self.get_parameter('mission.leg_timeout_sec').value
         if self._nav_result is None and not timed_out:
             return
@@ -656,7 +670,8 @@ class MissionStateMachine(Node):
 
     def _start_scan(self, leg) -> bool:
         g = self.get_parameter
-        offsets = list(g('mission.scan_offsets_deg').value)
+        raw_offsets = g('mission.scan_offsets_deg').value
+        offsets = [o for o in (raw_offsets or []) if o != 0.0]
         pose = self._pose()
         if not offsets or pose is None or not ml.scan_due(pose, leg.get('last_scan'), g('mission.scan_spacing').value,
                                                           tuple(g('zones.obstacle_zone').value)):
@@ -778,7 +793,18 @@ class MissionStateMachine(Node):
 
     def _reverse_step(self, leg):
         if self._drive_straight_step(leg['reverse']):
-            leg['phase'] = 'send'
+            pose = self._pose()
+            goal = leg['candidates'][leg['cand']]
+            if (pose is not None
+                    and ml.arrival_ok(goal, pose,
+                                      self.get_parameter('mission.arrival_xy_tolerance').value,
+                                      self.get_parameter('mission.arrival_yaw_tolerance').value)
+                    and ml.zone_ok(leg['name'], pose, self._fp, self._zones,
+                                   cross_margin=self.get_parameter('mission.zone_cross_margin').value)):
+                leg['phase'] = 'navigating'
+                self._nav_result = (GoalStatus.STATUS_SUCCEEDED, ml.NONE)
+            else:
+                leg['phase'] = 'send'
 
     def _next_free_candidate(self, leg) -> int:
         """Next candidate with no inscribed cost under the footprint (clear margin);
@@ -830,7 +856,8 @@ class MissionStateMachine(Node):
         self._cmd_vel_pub.publish(twist)
 
     def _start_survey(self, pose):
-        heads = [math.radians(h) for h in self.get_parameter('mission.survey_headings').value]
+        raw_heads = self.get_parameter('mission.survey_headings').value
+        heads = [math.radians(h) for h in (raw_heads or [])]
         if not heads:
             return self._start_leg(State.TRAVEL_TO_EXCAVATION)
         # sweep from the end nearer the current heading
