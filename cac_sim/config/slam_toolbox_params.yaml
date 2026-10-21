@@ -1,0 +1,36 @@
+# NOT USED BY THE CURRENT LAUNCH. slam_toolbox was replaced by marker-based
+# localization (cac_sim/marker_localizer.py): with arena-wall returns removed (the
+# rulebook forbids using the walls for mapping), a 2D LiDAR sees only three small
+# boulders - not enough for scan matching. Kept for reference / experiments.
+#
+# slam_toolbox (online_async) -- builds the obstacle-zone map AND localizes the
+# robot within it, using LiDAR scan matching only. This is how the rover
+# determines "where am I in the arena" without GPS or a compass: the map is
+# built from what the LiDAR actually sees (boulders, craters' rims, the arena
+# curbs), never from pre-supplied obstacle coordinates.
+
+slam_toolbox:
+  ros__parameters:
+    use_sim_time: true
+
+    # Frames: map->odom is published by slam_toolbox; odom->base_footprint comes
+    # from the robot_localization EKF (ekf.yaml). Together they form the full TF tree.
+    odom_frame: odom
+    map_frame: map
+    base_frame: base_footprint
+    scan_topic: /scan
+
+    mode: mapping
+    resolution: 0.05
+    max_laser_range: 8.0
+    minimum_time_interval: 0.2
+    transform_timeout: 0.3
+    tf_buffer_duration: 10.0
+    stack_size_to_use: 40000000
+
+    # Scan matching tuned for a fairly static arena (few dynamic obstacles) --
+    # defaults are conservative and reliable, intentionally left mostly at
+    # slam_toolbox's recommended values rather than hand-tuned further.
+    use_scan_matching: true
+    minimum_travel_distance: 0.2
+    minimum_travel_heading: 0.17

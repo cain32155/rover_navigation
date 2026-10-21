@@ -1,0 +1,67 @@
+<?xml version="1.0"?>
+<!-- Four-wheel rocker suspension: one rocker beam per side, pivoting about the
+     lateral axis on the chassis side, carrying that side's front and rear wheel.
+
+     Tree, not a loop: each rocker is its own revolute joint to base_link with a
+     centring spring and damper (gz <springStiffness>/<springReference> + URDF
+     damping), instead of a differential bar linking the two rockers (that would
+     close a kinematic loop URDF cannot express). The springs carry the pitch
+     moment between body and rockers, so the chassis cannot flop forward/back,
+     while each side still articulates +-rocker_limit to keep both of its wheels
+     on uneven ground. -->
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <!-- side: 'left' (+y) or 'right' (-y) -->
+  <xacro:macro name="rocker" params="side y_sign">
+    <xacro:property name="arm_drop" value="${rocker_pivot_z - wheel_radius}"/>  <!-- pivot above axle -->
+    <xacro:property name="arm_len" value="${sqrt(wheel_x_offset*wheel_x_offset + arm_drop*arm_drop)}"/>
+    <xacro:property name="arm_angle" value="${atan2(arm_drop, wheel_x_offset)}"/>
+    <link name="${side}_rocker_link">
+      <!-- two arms from the pivot down to the axles -->
+      <visual>
+        <origin xyz="${wheel_x_offset/2.0} 0 ${-arm_drop/2.0}" rpy="0 ${arm_angle} 0"/>
+        <geometry><box size="${arm_len} 0.03 0.04"/></geometry>
+        <material name="rocker_dark"/>
+      </visual>
+      <visual>
+        <origin xyz="${-wheel_x_offset/2.0} 0 ${-arm_drop/2.0}" rpy="0 ${-arm_angle} 0"/>
+        <geometry><box size="${arm_len} 0.03 0.04"/></geometry>
+        <material name="rocker_dark"/>
+      </visual>
+      <collision name="arm_front">
+        <origin xyz="${wheel_x_offset/2.0} 0 ${-arm_drop/2.0}" rpy="0 ${arm_angle} 0"/>
+        <geometry><box size="${arm_len} 0.03 0.04"/></geometry>
+      </collision>
+      <collision name="arm_rear">
+        <origin xyz="${-wheel_x_offset/2.0} 0 ${-arm_drop/2.0}" rpy="0 ${-arm_angle} 0"/>
+        <geometry><box size="${arm_len} 0.03 0.04"/></geometry>
+      </collision>
+      <inertial>
+        <origin xyz="0 0 ${-arm_drop/2.0}"/>
+        <mass value="${rocker_mass}"/>
+        <inertia ixx="${rocker_mass/12.0*(0.03*0.03 + arm_drop*arm_drop)}" ixy="0" ixz="0"
+                 iyy="${rocker_mass/12.0*(4*wheel_x_offset*wheel_x_offset + arm_drop*arm_drop)}" iyz="0"
+                 izz="${rocker_mass/12.0*(4*wheel_x_offset*wheel_x_offset + 0.03*0.03)}"/>
+      </inertial>
+    </link>
+    <joint name="${side}_rocker_joint" type="revolute">
+      <parent link="base_link"/>
+      <child link="${side}_rocker_link"/>
+      <origin xyz="0 ${y_sign*rocker_y} ${rocker_pivot_z - base_z}" rpy="0 0 0"/>
+      <axis xyz="0 1 0"/>
+      <limit lower="${-rocker_limit}" upper="${rocker_limit}" effort="1000" velocity="5.0"/>
+      <dynamics damping="${rocker_damping}" friction="0.0"/>
+    </joint>
+    <gazebo reference="${side}_rocker_joint">
+      <springReference>0.0</springReference>
+      <springStiffness>${rocker_spring}</springStiffness>
+    </gazebo>
+    <!-- the rocker arms pass through the 0.10 m LiDAR plane near the axles -->
+    <xacro:lidar_self_filter link="${side}_rocker_link"/>
+
+    <xacro:property name="wheel_dy" value="${y_sign*(wheel_y_offset - rocker_y)}"/>
+    <xacro:wheel prefix="front_${side}" parent="${side}_rocker_link" xyz="${wheel_x_offset} ${wheel_dy} ${-arm_drop}"/>
+    <xacro:wheel prefix="rear_${side}" parent="${side}_rocker_link" xyz="${-wheel_x_offset} ${wheel_dy} ${-arm_drop}"/>
+  </xacro:macro>
+
+</robot>

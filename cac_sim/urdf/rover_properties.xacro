@@ -1,0 +1,146 @@
+<?xml version="1.0"?>
+<!-- Shared dimensions, masses, joint limits, sensor mount poses and the LiDAR
+     self-filter bit masks for the CAC rover. Every other rover xacro file reads
+     these; change a number here, not in the component files.
+     Keep robot.footprint_* in config/arena_params.yaml and `footprint` in
+     config/nav2_params.yaml equal to the stowed envelope these produce
+     (test/test_consistency.py checks it).
+
+     Frames: base_footprint on the ground between the four wheels; base_link at
+     the chassis box centre, base_z above it. x forward, y left, z up. -->
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <!-- ============================= WHEELS ============================= -->
+  <xacro:property name="wheel_radius" value="0.12"/>
+  <xacro:property name="wheel_thickness" value="0.08"/>
+  <xacro:property name="wheel_mass" value="2.0"/>
+  <!-- half the left-right wheel separation (track = 0.66 m) -->
+  <xacro:property name="wheel_y_offset" value="0.33"/>
+  <!-- half the wheelbase (0.70 m). A wheelbase close to the track keeps the
+       sideways tyre scrub needed to skid-steer small. -->
+  <xacro:property name="wheel_x_offset" value="0.35"/>
+  <!-- Direction-dependent wheel friction (applied in wheels.xacro). With equal
+       friction in every direction a skid-steer rover in DART cannot yaw: the
+       sideways scrub torque beats the drive torque. Turning needs
+       mu_lateral < mu_longitudinal * track/wheelbase (0.94 here). -->
+  <xacro:property name="wheel_mu_lateral" value="0.3"/>
+  <xacro:property name="wheel_mu_longitudinal" value="1.0"/>
+  <!-- Lateral slip compliance (m/s per N). With pure Coulomb friction and equal
+       wheel loads every turning centre between the axles dissipates the same
+       energy, so DART picked an extreme: the rover pivoted about its FRONT axle
+       (measured: base_footprint slid sideways 0.18 m/s while spinning at 0.5
+       rad/s). A small compliance makes sideways tyre force proportional to slip
+       velocity below saturation, as a real tyre's is, which centres the turn.
+       Measured (spin 0.5 rad/s / arc 0.3 m/s+0.4 rad/s), sideways slide of
+       base_footprint: none 0.177/0.142 m/s; 0.003 -> 0.007/0.016 m/s;
+       0.01 -> 0.005/0.028; 0.03 -> 0.004/0.075 (too soft in arcs). -->
+  <xacro:property name="wheel_slip_lateral" value="0.003"/>
+
+  <!-- ============================= CHASSIS ============================= -->
+  <xacro:property name="chassis_length" value="0.90"/>
+  <xacro:property name="chassis_width" value="0.50"/>
+  <xacro:property name="chassis_height" value="0.20"/>
+  <xacro:property name="chassis_clearance" value="0.20"/>   <!-- underside above ground -->
+  <xacro:property name="chassis_mass" value="26.0"/>
+  <xacro:property name="base_z" value="${chassis_clearance + chassis_height/2.0}"/>
+
+  <!-- Top compartments (on the chassis deck, x ranges along the chassis):
+       front: arm mount | middle: open-top sand bin | rear: enclosed electronics -->
+  <xacro:property name="bin_x_min" value="-0.10"/>
+  <xacro:property name="bin_x_max" value="0.25"/>
+  <xacro:property name="bin_width" value="0.44"/>
+  <xacro:property name="bin_height" value="0.15"/>
+  <xacro:property name="bin_wall" value="0.01"/>
+  <xacro:property name="bin_mass" value="2.0"/>
+  <xacro:property name="elec_x_min" value="-0.44"/>
+  <xacro:property name="elec_x_max" value="-0.13"/>
+  <xacro:property name="elec_width" value="0.44"/>
+  <xacro:property name="elec_height" value="0.18"/>
+  <xacro:property name="elec_mass" value="6.0"/>
+
+  <!-- ====================== ROCKER SUSPENSION ======================
+       One rocker per side pivots about the lateral (y) axis on the chassis side;
+       the front and rear wheel of that side hang off its ends. Each rocker is an
+       independent, spring-centred, damped revolute joint (no closed kinematic
+       loop, no differential bar), so the URDF stays a tree. -->
+  <xacro:property name="rocker_y" value="0.275"/>          <!-- pivot / beam centre, from centreline -->
+  <xacro:property name="rocker_pivot_z" value="0.25"/>     <!-- pivot height above ground -->
+  <xacro:property name="rocker_mass" value="1.5"/>
+  <xacro:property name="rocker_limit" value="0.30"/>       <!-- rad, each way -->
+  <xacro:property name="rocker_spring" value="300.0"/>     <!-- N m/rad, centring spring -->
+  <xacro:property name="rocker_damping" value="15.0"/>     <!-- N m s/rad -->
+
+  <!-- ====================== FRONT EXCAVATOR ARM ======================
+       Boom -> stick (dipper) -> bucket, three pitch joints. Joint zero = the
+       STOWED pose: boom raised 45 deg, stick folded back and down in front of
+       the boom, bucket tucked against the stick, all above the camera's forward
+       view and inside the 0.66 m front of the footprint. Positive joint motion
+       pitches a link nose-down.
+       The pivot sits on a 5 cm pedestal above the deck: with the old 2 cm the
+       boom root passed ~3 cm through the chassis front whenever the boom was
+       lowered, and no stowed pose kept the bucket out of the boom
+       (test/test_arm_sweep.py; gz does not self-collide one model's links, so
+       physics never showed it). -->
+  <xacro:property name="arm_pivot_x" value="0.38"/>        <!-- boom pivot, from base_link -->
+  <xacro:property name="arm_pivot_z" value="0.15"/>        <!-- above base_link (0.45 m above ground) -->
+  <xacro:property name="boom_length" value="0.36"/>
+  <xacro:property name="boom_mass" value="2.0"/>
+  <xacro:property name="boom_stow_pitch" value="-0.7854"/> <!-- 45 deg up -->
+  <xacro:property name="stick_length" value="0.32"/>
+  <xacro:property name="stick_mass" value="1.5"/>
+  <xacro:property name="stick_stow_pitch" value="2.4034"/> <!-- folded back: 138 deg below the boom axis -->
+  <xacro:property name="bucket_mass" value="1.0"/>
+  <xacro:property name="bucket_stow_pitch" value="2.5832"/> <!-- tucked against the stick -->
+  <xacro:property name="arm_link_width" value="0.06"/>
+  <xacro:property name="arm_link_height" value="0.05"/>
+  <!-- joint limits (rad) and actuator limits -->
+  <xacro:property name="boom_lower" value="-0.20"/>
+  <xacro:property name="boom_upper" value="1.30"/>
+  <xacro:property name="stick_lower" value="-2.00"/>
+  <xacro:property name="stick_upper" value="0.05"/>
+  <xacro:property name="bucket_lower" value="-0.10"/>
+  <xacro:property name="bucket_upper" value="3.20"/>
+  <xacro:property name="arm_effort" value="120.0"/>        <!-- N m -->
+  <xacro:property name="arm_velocity" value="1.0"/>        <!-- rad/s -->
+
+  <!-- ========================= SENSOR MOUNT POSES =========================
+       Parent is base_link for all three. -->
+  <!-- LiDAR scan plane 0.10 m above ground: below the shortest (most buried)
+       boulder top (~0.18 m), hung under the chassis between the rockers. -->
+  <xacro:property name="lidar_mount_xyz" value="0 0 ${0.10 - base_z}"/>
+  <xacro:property name="lidar_mount_rpy" value="0 0 0"/>
+  <xacro:property name="imu_mount_xyz" value="0 0 0"/>
+  <xacro:property name="imu_mount_rpy" value="0 0 0"/>
+  <!-- RGB-D camera on the chassis front face, 0.33 m above ground, tilted 15 deg
+       down: sees the ground from ~0.35 m ahead of the bumper (craters) and the
+       start-zone markers; the stowed arm stays above its field of view. -->
+  <xacro:property name="camera_mount_xyz" value="${chassis_length/2.0 + 0.02} 0 0.03"/>
+  <xacro:property name="camera_mount_rpy" value="0 0.26 0"/>
+
+  <!-- ============================= MATERIALS ============================= -->
+  <material name="chassis_grey"><color rgba="0.2 0.2 0.25 1"/></material>
+  <material name="wheel_black"><color rgba="0.05 0.05 0.05 1"/></material>
+  <material name="sensor_orange"><color rgba="0.9 0.4 0.05 1"/></material>
+  <material name="bin_steel"><color rgba="0.55 0.57 0.6 1"/></material>
+  <material name="electronics_blue"><color rgba="0.15 0.3 0.6 1"/></material>
+  <material name="arm_yellow"><color rgba="0.95 0.75 0.1 1"/></material>
+  <material name="rocker_dark"><color rgba="0.3 0.3 0.3 1"/></material>
+
+  <!-- ===================== LIDAR SELF-DETECTION FILTER =====================
+       The LiDAR scans at 0.10 m, which cuts through the wheels (0-0.24 m) and
+       the rocker beams. gpu_lidar is rendering-based: it only sees visuals whose
+       <visibility_flags> share a bit with its <visibility_mask>. Every rover
+       visual that can reach the scan plane clears bit 0 and the LiDAR sees only
+       bit 0, so the rover is invisible to its own LiDAR while every external
+       object (default: all bits set) stays visible. The camera and the GUI keep
+       the default mask. Arena walls are NOT hidden from the sensors - wall
+       returns are removed in software (cac_sim/wall_filter.py), as on a real
+       robot. Any new rover link whose visual can intersect the scan plane must
+       call <xacro:lidar_self_filter link="..."/>, and its <visual> elements must
+       stay UNNAMED: the URDF->SDF converter only applies the flags to
+       unnamed visuals (found by testing: named rocker visuals stayed visible,
+       the LiDAR saw the rover's own rocker arms and the collision monitor froze
+       it). test/test_consistency.py checks this. -->
+  <xacro:property name="self_filter_flags" value="0xFFFFFFFE"/>  <!-- all bits except bit 0 -->
+  <xacro:property name="lidar_visibility_mask" value="0x00000001"/>  <!-- only bit 0 -->
+</robot>

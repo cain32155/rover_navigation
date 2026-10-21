@@ -1,0 +1,34 @@
+# Excavator-arm joint poses used by mission_state_machine, in the order of
+# arm.joints (radians; joint zero = stowed, positive = nose-down). Values come
+# from forward kinematics of urdf/arm.xacro; the bucket lip is the point
+# (0.14, 0, -0.035) of bucket_link:
+#   carry  [0.30, -1.00, 2.10]: lip 1.02 m ahead, 0.43 m up, open side up
+#   dig    [0.85, -1.25, 3.10]: lip 0.94 m ahead, 1.7 cm above the sand
+#   scoop  [0.85, -1.25, 2.80]: curl in, lip 0.97 m ahead, 5 cm up
+#   pour   [0.30, -1.35, 0.90]: bucket inverted, lip 0.91 m ahead, 0.58 m up
+# test/test_arm_sweep.py checks every pose and the joint-space path between
+# them against the chassis, bin, electronics box, wheels, sensors and ground.
+# The mission drives the arm only when all arm.joints are on /joint_states.
+# The motions are kinematic: no sand is simulated (payload_manager.py).
+/**:
+  ros__parameters:
+    arm:
+      joints: [boom_joint, stick_joint, bucket_joint]
+      stow: [0.0, 0.0, 0.0]
+      # raise/extend -> lower -> scoop -> lift -> stow (carry). Going through the
+      # raised pose first keeps the bucket from sweeping through the sand.
+      dig_sequence: [0.30, -1.00, 2.10,
+                     0.85, -1.25, 3.10,
+                     0.85, -1.25, 2.80,
+                     0.30, -1.00, 2.10,
+                     0.0, 0.0, 0.0]
+      # extend -> pour -> re-curl -> stow
+      dump_sequence: [0.30, -1.00, 2.10,
+                      0.30, -1.35, 0.90,
+                      0.30, -1.00, 2.10,
+                      0.0, 0.0, 0.0]
+      # bucket lip ahead of base_footprint at the dig pose (FK above); the mission
+      # nudges the rover before digging if this would land outside the excavation zone
+      dig_lip_forward: 0.94
+      pose_tolerance: 0.10
+      pose_timeout_sec: 10.0

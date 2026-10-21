@@ -1,0 +1,171 @@
+<?xml version="1.0" ?>
+<sdf version="1.10">
+  <world name="cac_arena">
+
+    <!--
+      COORDINATE SYSTEM (world frame, matches ROS `map`/`odom` convention):
+        X axis runs the LONG way down the arena (9 m), from the starting zone
+          (negative X) toward the construction zone (positive X).
+        Y axis runs the SHORT way (5 m width), centered on Y = 0.
+        Z = 0 is the top surface of the sand bed.
+
+      ZONE LAYOUT (all full-width in Y, split along X). Lengths are chosen to sum
+      exactly to the 9 m arena length (the rulebook text gives no zone sizes):
+        Starting Zone     : x in [-4.50, -2.70]   (1.8 m)   <- fits the rover at any yaw
+        Obstacle Zone      : x in [-2.70,  2.00]   (4.7 m)   <- boulders/craters live here
+        Excavation Zone    : x in [ 2.00,  3.50]   (1.5 m)
+        Construction Zone  : x in [ 3.50,  4.50]   (1.0 m)   <- berm target centered here
+
+      These bounds live in config/arena_params.yaml so every node agrees on them.
+
+      This file is the BASE world. Each run, launch/cac_sim.launch.py has
+      cac_sim/arena_layout.py write a per-seed copy into the run directory in
+      which the solid sand_bed below is replaced by floor tiles around crater
+      depression meshes, and the seeded boulders, craters and start-zone ArUco
+      markers are added. This file alone (no obstacles) is still a valid world.
+    -->
+
+    <physics name="1ms" type="ode">
+      <max_step_size>0.001</max_step_size>
+      <real_time_factor>1.0</real_time_factor>
+    </physics>
+    <plugin filename="gz-sim-physics-system" name="gz::sim::systems::Physics"/>
+    <plugin filename="gz-sim-user-commands-system" name="gz::sim::systems::UserCommands"/>
+    <plugin filename="gz-sim-scene-broadcaster-system" name="gz::sim::systems::SceneBroadcaster"/>
+    <plugin filename="gz-sim-sensors-system" name="gz::sim::systems::Sensors">
+      <render_engine>ogre2</render_engine>
+    </plugin>
+    <plugin filename="gz-sim-imu-system" name="gz::sim::systems::Imu"/>
+    <plugin filename="gz-sim-contact-system" name="gz::sim::systems::Contact"/>
+
+    <!-- UserCommands (above) implements the /world/.../create service that
+         ros_gz_sim `create` uses to spawn the rover. -->
+
+    <light type="directional" name="sun">
+      <cast_shadows>true</cast_shadows>
+      <pose>0 0 10 0 0 0</pose>
+      <diffuse>0.9 0.9 0.85 1</diffuse>
+      <specular>0.3 0.3 0.3 1</specular>
+      <direction>-0.3 0.2 -0.9</direction>
+    </light>
+
+    <!-- SAND BED: the full 9x5 arena floor, modelling the ~30cm tilled sand depth.
+         Rigid (no granular physics). Replaced per run by tiles + crater meshes
+         (see above); the model name "sand_bed" is what the generator looks for. -->
+    <model name="sand_bed">
+      <static>true</static>
+      <pose>0 0 -0.15 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry>
+            <box><size>9.0 5.0 0.30</size></box>
+          </geometry>
+          <surface>
+            <friction>
+              <ode><mu>0.9</mu><mu2>0.9</mu2></ode>
+            </friction>
+          </surface>
+        </collision>
+        <visual name="visual">
+          <geometry>
+            <box><size>9.0 5.0 0.30</size></box>
+          </geometry>
+          <material>
+            <ambient>0.76 0.65 0.45 1</ambient>
+            <diffuse>0.76 0.65 0.45 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- Perimeter walls, 0.80 m tall. These exist for physical containment only
+         (stop robot/obstacles leaving the arena) - the autonomy stack must NOT use
+         them as a navigation reference: wall LiDAR returns are removed by
+         cac_sim/wall_filter.py before any costmap (README "Wall compliance").
+         Height clears the rulebook's 0.75 m max stowed robot height (current rover
+         top is ~0.70 m), so the rover can't physically overtop them.
+         Collision and visual boxes are identical; inner faces stay at y=+-2.50 and
+         x=+-4.50 so the 9x5 m floor and zone layout are unchanged. -->
+    <model name="arena_wall_north">
+      <static>true</static>
+      <pose>0 2.52 0.40 0 0 0</pose>
+      <link name="link">
+        <collision name="collision"><geometry><box><size>9.1 0.04 0.80</size></box></geometry></collision>
+        <visual name="visual"><geometry><box><size>9.1 0.04 0.80</size></box></geometry>
+          <material><ambient>0.5 0.5 0.5 1</ambient><diffuse>0.5 0.5 0.5 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+    <model name="arena_wall_south">
+      <static>true</static>
+      <pose>0 -2.52 0.40 0 0 0</pose>
+      <link name="link">
+        <collision name="collision"><geometry><box><size>9.1 0.04 0.80</size></box></geometry></collision>
+        <visual name="visual"><geometry><box><size>9.1 0.04 0.80</size></box></geometry>
+          <material><ambient>0.5 0.5 0.5 1</ambient><diffuse>0.5 0.5 0.5 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+    <model name="arena_wall_east">
+      <static>true</static>
+      <pose>4.52 0 0.40 0 0 0</pose>
+      <link name="link">
+        <collision name="collision"><geometry><box><size>0.04 5.1 0.80</size></box></geometry></collision>
+        <visual name="visual"><geometry><box><size>0.04 5.1 0.80</size></box></geometry>
+          <material><ambient>0.5 0.5 0.5 1</ambient><diffuse>0.5 0.5 0.5 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+    <model name="arena_wall_west">
+      <static>true</static>
+      <pose>-4.52 0 0.40 0 0 0</pose>
+      <link name="link">
+        <collision name="collision"><geometry><box><size>0.04 5.1 0.80</size></box></geometry></collision>
+        <visual name="visual"><geometry><box><size>0.04 5.1 0.80</size></box></geometry>
+          <material><ambient>0.5 0.5 0.5 1</ambient><diffuse>0.5 0.5 0.5 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- Zone boundary lines: 3 cm painted strips (visual only, no collision) at
+         x = -2.7 (start | obstacle), 2.0 (obstacle | excavation) and 3.5
+         (excavation | construction). Full-zone coloured floor panels were tried
+         first and REMOVED: the RGB-D depth image rendered those semi-transparent
+         panels as an opaque floor, hiding every crater depression under them
+         (verified live; camera visibility masks did not change the depth image).
+         Obstacle centres stay >= 0.35 m inside their zone, so a line never
+         crosses a crater. -->
+    <model name="zone_line_start_obstacle">
+      <static>true</static>
+      <pose>-2.7 0 0.001 0 0 0</pose>
+      <link name="link"><visual name="visual"><geometry><box><size>0.03 5.0 0.002</size></box></geometry>
+        <material><ambient>0.2 0.6 0.9 1</ambient><diffuse>0.2 0.6 0.9 1</diffuse></material>
+      </visual></link>
+    </model>
+    <model name="zone_line_obstacle_excavation">
+      <static>true</static>
+      <pose>2.0 0 0.001 0 0 0</pose>
+      <link name="link"><visual name="visual"><geometry><box><size>0.03 5.0 0.002</size></box></geometry>
+        <material><ambient>0.9 0.6 0.1 1</ambient><diffuse>0.9 0.6 0.1 1</diffuse></material>
+      </visual></link>
+    </model>
+    <model name="zone_line_excavation_construction">
+      <static>true</static>
+      <pose>3.5 0 0.001 0 0 0</pose>
+      <link name="link"><visual name="visual"><geometry><box><size>0.03 5.0 0.002</size></box></geometry>
+        <material><ambient>0.2 0.8 0.3 1</ambient><diffuse>0.2 0.8 0.3 1</diffuse></material>
+      </visual></link>
+    </model>
+
+    <!-- Target berm marker: where collected sand should be dumped (construction
+         zone; no craters are ever placed there). Visual only. -->
+    <model name="berm_target_marker">
+      <static>true</static>
+      <pose>4.0 0 0.002 0 0 0</pose>
+      <link name="link"><visual name="visual"><geometry><cylinder><radius>0.4</radius><length>0.004</length></cylinder></geometry>
+        <material><ambient>0.1 0.9 0.1 0.9</ambient><diffuse>0.1 0.9 0.1 0.9</diffuse></material>
+      </visual></link>
+    </model>
+
+  </world>
+</sdf>

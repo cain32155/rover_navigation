@@ -1,0 +1,50 @@
+# robot_localization EKF: fuses wheel odometry + IMU into a smooth odom->base_footprint
+# transform. This is the ONLY local-pose source for the robot; marker_localizer
+# (start-zone ArUco markers, see cac_sim/marker_localizer.py) provides the
+# map->odom correction. Together these give a full localization solution using
+# only allowed sensors (wheel encoders, IMU gyro, camera) -- no GPS, no compass,
+# and no use of the arena walls.
+#
+# IMPORTANT COMPLIANCE NOTE:
+# Gazebo's simulated IMU reports an `orientation` field derived from the simulator's
+# ground-truth pose, which is more accurate than any real IMU could be (a real IMU
+# only gets absolute yaw via a magnetometer, which this competition disallows). To
+# keep the simulation honest about what the physical robot will actually have, the
+# EKF below fuses IMU roll/pitch (useful for tilt on sand/obstacles) and angular
+# velocity (gyro) and linear acceleration, but explicitly does NOT fuse IMU yaw.
+# Heading comes from integrating the GYRO: wheel odometry is fused as body
+# VELOCITIES only (vx, vy). Skid-steer odometry overstates yaw rate by up to ~6%
+# (measured), and fusing its absolute pose would fight the marker corrections.
+
+ekf_filter_node:
+  ros__parameters:
+    frequency: 30.0
+    two_d_mode: true
+    use_sim_time: true
+
+    map_frame: map
+    odom_frame: odom
+    base_link_frame: base_footprint
+    world_frame: odom          # this instance only resolves odom->base_footprint
+
+    publish_tf: true
+
+    odom0: /odom_raw
+    # [x, y, z, roll, pitch, yaw, vx, vy, vz, vroll, vpitch, vyaw, ax, ay, az]
+    odom0_config: [false, false, false,
+                   false, false, false,
+                   true,  true,  false,
+                   false, false, false,
+                   false, false, false]
+    odom0_differential: false
+    odom0_queue_size: 10
+
+    imu0: /imu
+    imu0_config: [false, false, false,
+                  true,  true,  false,   # roll, pitch yes -- yaw deliberately excluded (see note above)
+                  false, false, false,
+                  true,  true,  true,    # gyro (angular velocity) fully trusted
+                  true,  true,  false]   # accel x/y trusted, z excluded (gravity-noise prone)
+    imu0_differential: false
+    imu0_remove_gravitational_acceleration: true
+    imu0_queue_size: 10

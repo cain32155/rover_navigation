@@ -1,0 +1,53 @@
+<?xml version="1.0"?>
+<!-- Wheels. Joint names (<prefix>_wheel_joint) are what the DiffDrive plugin
+     and /joint_states refer to - keep them stable. -->
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <!-- One driven wheel on `parent` (a rocker link) at `xyz` in the parent frame.
+       The inertial frame is rolled like the geometry, so the axial moment
+       (m r^2 / 2) sits on the axle (link Y), not link Z. -->
+  <xacro:macro name="wheel" params="prefix parent xyz">
+    <link name="${prefix}_wheel_link">
+      <visual>
+        <origin xyz="0 0 0" rpy="1.5708 0 0"/>
+        <geometry><cylinder radius="${wheel_radius}" length="${wheel_thickness}"/></geometry>
+        <material name="wheel_black"/>
+      </visual>
+      <collision>
+        <origin xyz="0 0 0" rpy="1.5708 0 0"/>
+        <geometry><cylinder radius="${wheel_radius}" length="${wheel_thickness}"/></geometry>
+      </collision>
+      <xacro:cylinder_inertial mass="${wheel_mass}" radius="${wheel_radius}" length="${wheel_thickness}"
+                               rpy="1.5708 0 0"/>
+    </link>
+    <joint name="${prefix}_wheel_joint" type="continuous">
+      <parent link="${parent}"/>
+      <child link="${prefix}_wheel_link"/>
+      <origin xyz="${xyz}" rpy="0 0 0"/>
+      <axis xyz="0 1 0"/>
+    </joint>
+    <!-- The wheels span 0-0.24 m and cut the 0.10 m LiDAR plane. -->
+    <xacro:lidar_self_filter link="${prefix}_wheel_link"/>
+    <!-- Skid-steer friction, see wheel_mu_* / wheel_slip_lateral in
+         rover_properties.xacro. Written as a full SDF <surface> block (the URDF
+         mu1/mu2 shortcut tags cannot carry slip compliance). fdir1 is in the
+         collision frame: after the 1.5708 roll above, collision Z is the axle
+         (link -Y), so mu / slip1 = sideways and mu2 / slip2 = rolling direction. -->
+    <gazebo reference="${prefix}_wheel_link">
+      <collision>
+        <surface>
+          <friction>
+            <ode>
+              <mu>${wheel_mu_lateral}</mu>
+              <mu2>${wheel_mu_longitudinal}</mu2>
+              <fdir1>0 0 1</fdir1>
+              <slip1>${wheel_slip_lateral}</slip1>
+              <slip2>0.0</slip2>
+            </ode>
+          </friction>
+        </surface>
+      </collision>
+    </gazebo>
+  </xacro:macro>
+
+</robot>

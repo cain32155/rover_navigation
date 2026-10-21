@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+
+# ROS 2 build artifacts
+build/
+install/
+log/
+*.log
+
+# Editor & OS files
+.DS_Store
+.vscode/
+.idea/

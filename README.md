@@ -1,108 +1,77 @@
-# rover_navigation
+# Autonomous Rover Navigation & CAC 2027 Simulation Workspace
 
-ROS 2 Jazzy Nav2 configuration and launch files for a differential-drive autonomous sand rover running on a Jetson Orin Nano with an Intel RealSense depth camera (`PointCloud2`) and external localization (`map -> odom -> base_link` + `/odom`).
+This repository contains the complete autonomous navigation stack and simulation environment for the Caterpillar Autonomy Challenge (CAC) 2027 rover, targeted for **ROS 2 Jazzy**.
 
 ---
 
-## Package Structure
+## Repository Structure
 
-- `config/nav2_params.yaml`: Nav2 parameters tuned for low CPU usage (`SmacPlanner2D`, `RegulatedPurePursuitController`), gentle sand velocities/accelerations (`velocity_smoother`, `behavior_server`), and depth-camera `PointCloud2` obstacle detection.
-- `launch/navigation.launch.py`: Real-rover navigation launch file. Starts **only** the Nav2 navigation servers (`navigation_launch.py` from `nav2_bringup`) without `amcl` or `map_server`.
-- `launch/sim_test.launch.py`: Desktop simulation test launch file. Wraps `nav2_bringup`'s `tb3_loopback_simulation.launch.py` using this package's `config/nav2_params.yaml`.
+```
+.
+├── cac_sim/             # Full simulation, arena layout, and autonomous mission state machine
+└── rover_navigation/    # Nav2 navigation stack configuration and bringup for the real rover
+```
+
+### 1. `cac_sim`
+ROS 2 Jazzy + Gazebo Harmonic simulation of the 9 × 5 m competition arena and the 4-wheel skid-steer rover.
+- **ArUco Marker Localization** (`marker_localizer.py`): Replaces SLAM with start-zone marker PnP solving to comply with competition rules forbidding wall-based localization.
+- **Perception & Filtering**:
+  - `wall_filter.py`: Strips arena wall and ground-plane LiDAR hits.
+  - `crater_detector.py`: Detects negative obstacles (craters) from RGB-D point clouds and projects their occlusion shadows into the costmap.
+- **Mission Autonomy** (`mission_state_machine.py` + `mission_logic.py`): Fully autonomous mission sequencing (`LOCALIZE` → `SURVEY` → `TRAVEL_TO_EXCAVATION` → `EXCAVATION` → `TRAVEL_TO_CONSTRUCTION` → `DUMP` → `RETURN`).
+- **Material Accounting** (`material_model.py`): Tracks sand extraction and berm deposition volume estimates.
+
+### 2. `rover_navigation`
+The deployable navigation package for the real rover running on an onboard computer (e.g. NVIDIA Jetson Orin Nano).
+- Tuned `nav2_params.yaml` featuring **SmacPlanner2D** and **RegulatedPurePursuitController** optimized for sand locomotion.
+- Dedicated launch files for hardware navigation (`navigation.launch.py`) and simulation desktop testing (`sim_test.launch.py`).
+- Pre-configured behavior trees and costmap configurations.
+
+---
+
+## Performance & Fast-Mission Tuning (5–6 Min Runtime)
+
+The mission parameters in `cac_sim/config/arena_params.yaml` and `cac_sim/config/nav2_params.yaml` have been optimized to reduce overall mission runtime from ~10 minutes down to **5–6 minutes**:
+
+1. **Mid-Path Sweeps Disabled**:
+   - `mission.scan_offsets_deg: []` (turned off the periodic $\pm 50^\circ$ scan stops every 1.2 m that added ~15 seconds per stop).
+2. **Optimized Time Budget & Capped Cycles**:
+   - `mission.num_cycles: 2` (awards full autonomy points according to competition criteria while eliminating runaway multi-cycle loops).
+   - `mission.time_budget_sec: 360.0` (6 minutes maximum mission time).
+   - `mission.return_reserve_sec: 90.0` (time reserved for returning to the start zone).
+3. **Increased Controller Driving Speeds**:
+   - `desired_linear_vel: 0.35` m/s (increased from 0.20 m/s for faster transit).
+   - `regulated_linear_scaling_min_speed: 0.20` m/s.
+4. **Faster Initial Survey & Recovery**:
+   - Initial obstacle survey reduced to 3 headings (`[-45.0, 0.0, 45.0]`) with 0.6 s hold time.
+   - Survey turn rate increased to `0.50` rad/s.
+   - Reverse speed between cycles increased to `0.20` m/s.
 
 ---
 
 ## Build Instructions
 
 ```bash
-cd ~/rover_ws
-colcon build --symlink-install --packages-select rover_navigation
+# Clone and build within your workspace root (e.g., ~/rover_ws)
+source /opt/ros/jazzy/setup.bash
+colcon build --symlink-install
 source install/setup.bash
 ```
 
-Verify that the YAML configuration parses cleanly:
-
-```bash
-python3 -c "import yaml,sys; yaml.safe_load(open('src/rover_navigation/config/nav2_params.yaml'))"
-```
-
 ---
 
-## Running on the Real Rover
+## Running
 
-When the external localization package (UKF + SLAM / AprilTag fallback) and RealSense camera are running and publishing `map -> odom -> base_link`, `/odom`, and `/camera/depth/color/points`:
-
+### Simulation
 ```bash
-source ~/rover_ws/install/setup.bash
+ros2 launch cac_sim cac_sim.launch.py seed:=42
+```
+Optional arguments:
+- `headless:=true use_rviz:=false` (run without GUI)
+- `autonomy:=false` (teleoperation / manual mode)
+- `randomize:=false` (fixed start pose, no obstacles)
+
+### Real Rover Navigation
+```bash
 ros2 launch rover_navigation navigation.launch.py
 ```
-
-Optional launch arguments:
-- `use_sim_time:=false` (default: `false`)
-- `autostart:=true` (default: `true`)
-- `params_file:=/path/to/custom_params.yaml` (default: `rover_navigation/config/nav2_params.yaml`)
-
----
-
-## Desktop Testing with Loopback Simulation (`sim_test.launch.py`)
-
-`tb3_loopback_simulation.launch.py` natively accepts a `params_file` argument (`ros2 launch nav2_bringup tb3_loopback_simulation.launch.py --show-args`) and passes it to `bringup_launch.py`, `map_server`, and `loopback_simulation.launch.py`.
-
-Launch the loopback simulation with our rover parameters:
-
-```bash
-source ~/rover_ws/install/setup.bash
-ros2 launch rover_navigation sim_test.launch.py
-```
-
-### Handling the Initial `map -> odom` Transform Timeout in Loopback Sim
-
-In `tb3_loopback_simulation.launch.py`, `nav2_loopback_sim` provides an `initialpose` subscriber and immediately broadcasts `map -> odom -> base_footprint` at `(0, 0, 0)` on startup, or updates `map -> odom` whenever **2D Pose Estimate** (`/initialpose`) is set in RViz.
-
-If `global_costmap` / `planner_server` waits on `map -> base_link` or times out during bringup before an initial pose is published:
-
-1. **In RViz**: Click the **2D Pose Estimate** button in the top toolbar and click/drag on the map to publish `/initialpose`, then if lifecycle bringup timed out, click **Startup** (or **Reset** -> **Startup**) in the Nav2 RViz panel.
-2. **Or via CLI** (useful for headless testing or before RViz interaction):
-   ```bash
-   ros2 topic pub --once /initialpose geometry_msgs/msg/PoseWithCovarianceStamped "{header: {frame_id: 'map'}, pose: {pose: {position: {x: 0.0, y: 0.0, z: 0.0}, orientation: {w: 1.0}}}}"
-   ```
-   If `lifecycle_manager_navigation` timed out waiting for transforms, resume it via:
-   ```bash
-   ros2 service call /lifecycle_manager_navigation/manage_nodes nav2_msgs/srv/ManageLifecycleNodes "{command: 0}"
-   ```
-
----
-
-## Verification Steps
-
-With `sim_test.launch.py` (or `navigation.launch.py`) running, check the lifecycle states of the core servers:
-
-```bash
-ros2 lifecycle get /planner_server
-ros2 lifecycle get /controller_server
-ros2 lifecycle get /bt_navigator
-```
-
-Expected output for all three:
-```text
-active [3]
-```
-
-Verify active plugins and key parameters:
-
-```bash
-ros2 param get /planner_server GridBased.plugin
-# Expected: String value is: nav2_smac_planner::SmacPlanner2D
-
-ros2 param get /controller_server FollowPath.plugin
-# Expected: String value is: nav2_regulated_pure_pursuit_controller::RegulatedPurePursuitController
-```
-
----
-
-## Unverified Parameters
-
-All active parameters in `config/nav2_params.yaml` were verified directly against the installed ROS 2 Jazzy binaries and headers under `/opt/ros/jazzy`.
-
-- **Commented-out `spatio_temporal_voxel_layer` (`stvl_layer`) block**: `ros-jazzy-spatio-temporal-voxel-layer` is not currently installed in `/opt/ros/jazzy` on this machine, so its parameter names come from the Nav2 Jazzy STVL documentation and remain commented out in `config/nav2_params.yaml`.
-- **Per-behavior linear backup speed parameter in `behavior_server`**: In Nav2 Jazzy (`nav2_behaviors::BackUp` / `DriveOnHeading`), linear backup speed is passed in the `BackUp` Behavior Tree action goal (`backup_speed="0.15"` in the default `navigate_to_pose_w_replanning_and_recovery.xml`) rather than as a ROS parameter on `behavior_server`, and is further clamped by `velocity_smoother` (`min_velocity: [-0.2, 0.0, -0.8]`, `max_accel`, `max_decel`). Therefore no unverified ROS parameter was invented under `behavior_server.backup`.

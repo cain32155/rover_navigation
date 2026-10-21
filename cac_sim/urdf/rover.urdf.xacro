@@ -1,0 +1,54 @@
+<?xml version="1.0"?>
+<robot name="cac_rover" xmlns:xacro="http://www.ros.org/wiki/xacro">
+  <!--
+    CAC rover: compact skid-steer chassis on a four-wheel rocker suspension, a
+    front excavator arm, an open-top sand bin (middle) and an enclosed
+    electronics compartment (rear). Stowed envelope ~1.14 x 0.74 x 0.71 m, mass
+    ~49 kg: inside the competition limits (1.5 x 0.75 x 0.75 m, 80 kg).
+
+    Link/joint tree (fixed joints marked =):
+      base_footprint = base_link
+        base_link = bin_link, = electronics_link, = arm_mount_link
+          arm_mount_link - boom_joint -> boom_link - stick_joint -> stick_link
+                                          - bucket_joint -> bucket_link
+        base_link - left_rocker_joint  -> left_rocker_link
+                      - front_left_wheel_joint / rear_left_wheel_joint -> *_wheel_link
+        base_link - right_rocker_joint -> right_rocker_link
+                      - front_right_wheel_joint / rear_right_wheel_joint -> *_wheel_link
+        base_link = lidar_link, = imu_link, = camera_link = camera_optical_link
+
+    Parts:
+      rover_properties.xacro  dimensions, masses, limits, sensor mounts, self-filter masks
+      rover_macros.xacro      inertia / self-filter / fixed-joint helpers
+      chassis.xacro           base_footprint, base_link, sand bin, electronics box
+      suspension.xacro        rocker macro (rocker + its two wheels)
+      wheels.xacro            wheel macro (link + continuous joint + friction)
+      arm.xacro               boom / stick / bucket
+      sensors.xacro           lidar, imu, rgbd_camera
+      gazebo_plugins.xacro    DiffDrive, JointStatePublisher, arm JointPositionControllers
+  -->
+  <xacro:include filename="rover_properties.xacro"/>
+  <xacro:include filename="rover_macros.xacro"/>
+  <xacro:include filename="chassis.xacro"/>
+  <xacro:include filename="wheels.xacro"/>
+  <xacro:include filename="suspension.xacro"/>
+  <xacro:include filename="arm.xacro"/>
+  <xacro:include filename="sensors.xacro"/>
+  <xacro:include filename="gazebo_plugins.xacro"/>
+
+  <xacro:rover_chassis/>
+  <xacro:rocker side="left" y_sign="1"/>
+  <xacro:rocker side="right" y_sign="-1"/>
+  <xacro:excavator_arm parent="base_link"/>
+
+  <xacro:lidar       parent="base_link" xyz="${lidar_mount_xyz}"  rpy="${lidar_mount_rpy}"/>
+  <xacro:imu         parent="base_link" xyz="${imu_mount_xyz}"    rpy="${imu_mount_rpy}"/>
+  <xacro:rgbd_camera parent="base_link" xyz="${camera_mount_xyz}" rpy="${camera_mount_rpy}"/>
+
+  <xacro:skid_steer_drive left_front="front_left_wheel_joint"   left_rear="rear_left_wheel_joint"
+                          right_front="front_right_wheel_joint" right_rear="rear_right_wheel_joint"/>
+  <xacro:joint_state_publisher/>
+  <xacro:arm_joint_controller joint="boom_joint" p="400" i="40" d="20"/>
+  <xacro:arm_joint_controller joint="stick_joint" p="250" i="25" d="12"/>
+  <xacro:arm_joint_controller joint="bucket_joint" p="150" i="50" d="5"/>
+</robot>

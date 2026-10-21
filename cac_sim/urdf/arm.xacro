@@ -1,0 +1,125 @@
+<?xml version="1.0"?>
+<!-- Simplified JCB-style front excavator arm: boom -> stick (dipper) -> bucket.
+
+     Three revolute pitch joints (axis +y; positive = nose-down). Joint zero is the
+     STOWED pose used while driving: boom 45 deg up, stick folded back and down
+     in front of the boom, bucket tucked against the stick, so the whole arm stays
+     above the camera's forward view and inside the 1.5 x 0.75 x 0.75 m envelope
+     (test/test_arm_sweep.py).
+     Each link's +x runs along its length. Each joint is position-controlled by a
+     gz JointPositionController (gazebo_plugins.xacro); commands arrive on
+     /arm/<joint>/cmd (std_msgs/Float64, radians) through ros_gz_bridge.
+
+     The arm is kinematic hardware only: digging and dumping sand are not
+     simulated (see cac_sim/payload_manager.py). -->
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <xacro:macro name="arm_box_link" params="name length mass">
+    <link name="${name}">
+      <visual>
+        <origin xyz="${length/2.0} 0 0"/>
+        <geometry><box size="${length} ${arm_link_width} ${arm_link_height}"/></geometry>
+        <material name="arm_yellow"/>
+      </visual>
+      <collision>
+        <origin xyz="${length/2.0} 0 0"/>
+        <geometry><box size="${length} ${arm_link_width} ${arm_link_height}"/></geometry>
+      </collision>
+      <inertial>
+        <origin xyz="${length/2.0} 0 0"/>
+        <mass value="${mass}"/>
+        <inertia ixx="${mass/12.0*(arm_link_width*arm_link_width + arm_link_height*arm_link_height)}" ixy="0" ixz="0"
+                 iyy="${mass/12.0*(length*length + arm_link_height*arm_link_height)}" iyz="0"
+                 izz="${mass/12.0*(length*length + arm_link_width*arm_link_width)}"/>
+      </inertial>
+    </link>
+  </xacro:macro>
+
+  <xacro:macro name="excavator_arm" params="parent">
+    <!-- Mount bracket on the chassis deck (fixed, part of the chassis). -->
+    <link name="arm_mount_link">
+      <visual>
+        <origin xyz="0 0 ${-(arm_pivot_z - chassis_height/2.0)/2.0}"/>
+        <geometry><box size="0.08 0.12 ${arm_pivot_z - chassis_height/2.0}"/></geometry>
+        <material name="chassis_grey"/>
+      </visual>
+      <collision>
+        <origin xyz="0 0 ${-(arm_pivot_z - chassis_height/2.0)/2.0}"/>
+        <geometry><box size="0.08 0.12 ${arm_pivot_z - chassis_height/2.0}"/></geometry>
+      </collision>
+      <xacro:box_inertial mass="0.5" x="0.08" y="0.12" z="${arm_pivot_z - chassis_height/2.0}"/>
+    </link>
+    <joint name="arm_mount_joint" type="fixed">
+      <parent link="${parent}"/>
+      <child link="arm_mount_link"/>
+      <origin xyz="${arm_pivot_x} 0 ${arm_pivot_z}"/>
+    </joint>
+
+    <xacro:arm_box_link name="boom_link" length="${boom_length}" mass="${boom_mass}"/>
+    <joint name="boom_joint" type="revolute">
+      <parent link="arm_mount_link"/>
+      <child link="boom_link"/>
+      <origin xyz="0 0 0" rpy="0 ${boom_stow_pitch} 0"/>
+      <axis xyz="0 1 0"/>
+      <limit lower="${boom_lower}" upper="${boom_upper}" effort="${arm_effort}" velocity="${arm_velocity}"/>
+      <dynamics damping="2.0" friction="0.0"/>
+    </joint>
+
+    <xacro:arm_box_link name="stick_link" length="${stick_length}" mass="${stick_mass}"/>
+    <joint name="stick_joint" type="revolute">
+      <parent link="boom_link"/>
+      <child link="stick_link"/>
+      <origin xyz="${boom_length} 0 0" rpy="0 ${stick_stow_pitch} 0"/>
+      <axis xyz="0 1 0"/>
+      <limit lower="${stick_lower}" upper="${stick_upper}" effort="${arm_effort}" velocity="${arm_velocity}"/>
+      <dynamics damping="1.5" friction="0.0"/>
+    </joint>
+
+    <!-- Bucket: open box (floor + back + two sides) hinged at the stick tip.
+         Bucket +x points from the hinge to the cutting lip. -->
+    <link name="bucket_link">
+      <visual>
+        <origin xyz="0.07 0 -0.035"/>
+        <geometry><box size="0.14 0.16 0.01"/></geometry>
+        <material name="arm_yellow"/>
+      </visual>
+      <visual>
+        <origin xyz="0.0 0 0"/>
+        <geometry><box size="0.01 0.16 0.07"/></geometry>
+        <material name="arm_yellow"/>
+      </visual>
+      <visual>
+        <origin xyz="0.07 0.075 0"/>
+        <geometry><box size="0.14 0.01 0.07"/></geometry>
+        <material name="arm_yellow"/>
+      </visual>
+      <visual>
+        <origin xyz="0.07 -0.075 0"/>
+        <geometry><box size="0.14 0.01 0.07"/></geometry>
+        <material name="arm_yellow"/>
+      </visual>
+      <!-- one collision box over the whole bucket keeps contacts simple -->
+      <collision>
+        <origin xyz="0.07 0 0"/>
+        <geometry><box size="0.14 0.16 0.07"/></geometry>
+      </collision>
+      <inertial>
+        <origin xyz="0.06 0 -0.01"/>
+        <mass value="${bucket_mass}"/>
+        <inertia ixx="0.0025" ixy="0" ixz="0" iyy="0.002" iyz="0" izz="0.0035"/>
+      </inertial>
+    </link>
+    <joint name="bucket_joint" type="revolute">
+      <parent link="stick_link"/>
+      <child link="bucket_link"/>
+      <origin xyz="${stick_length} 0 0" rpy="0 ${bucket_stow_pitch} 0"/>
+      <axis xyz="0 1 0"/>
+      <limit lower="${bucket_lower}" upper="${bucket_upper}" effort="${arm_effort}" velocity="${arm_velocity}"/>
+      <dynamics damping="0.5" friction="0.0"/>
+    </joint>
+    <!-- the bucket reaches the 0.10 m LiDAR plane when digging -->
+    <xacro:lidar_self_filter link="boom_link"/>
+    <xacro:lidar_self_filter link="stick_link"/>
+    <xacro:lidar_self_filter link="bucket_link"/>
+  </xacro:macro>
+</robot>

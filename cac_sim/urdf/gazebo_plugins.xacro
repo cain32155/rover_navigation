@@ -1,0 +1,61 @@
+<?xml version="1.0"?>
+<!-- Model-level Gazebo plugins: drive, joint-state publishing, arm joint control. -->
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <!-- Skid-steer drive: both wheels on a side get the same speed. gz-sim's
+       DiffDrive system accepts several <left_joint>/<right_joint> entries and
+       velocity-commands all of them, so the four wheels (now on the rockers) are
+       driven as a 4-wheel differential drive; no extra plugin is needed. -->
+  <xacro:macro name="skid_steer_drive" params="left_front left_rear right_front right_rear">
+    <gazebo>
+      <plugin filename="gz-sim-diff-drive-system" name="gz::sim::systems::DiffDrive">
+        <left_joint>${left_front}</left_joint>
+        <left_joint>${left_rear}</left_joint>
+        <right_joint>${right_front}</right_joint>
+        <right_joint>${right_rear}</right_joint>
+        <wheel_separation>${2*wheel_y_offset}</wheel_separation>
+        <wheel_radius>${wheel_radius}</wheel_radius>
+        <odom_publish_frequency>50</odom_publish_frequency>
+        <topic>/cmd_vel</topic>
+        <odom_topic>/odom_raw</odom_topic>
+        <frame_id>odom</frame_id>
+        <child_frame_id>base_footprint</child_frame_id>
+        <!-- Wheel odom is fused (with IMU) by robot_localization's EKF, which
+             publishes the real odom->base_footprint TF. We deliberately do NOT
+             bridge gz's own tf topic to ROS, so there is exactly one publisher
+             of that transform - see launch/cac_sim.launch.py. -->
+      </plugin>
+    </gazebo>
+  </xacro:macro>
+
+  <!-- Position control for one arm joint: a PID on joint effort tracking the
+       angle published on /arm/<joint>/cmd (gz.msgs.Double, bridged from
+       std_msgs/Float64). Holds the stowed pose (0) from spawn. -->
+  <xacro:macro name="arm_joint_controller" params="joint p i d">
+    <gazebo>
+      <plugin filename="gz-sim-joint-position-controller-system" name="gz::sim::systems::JointPositionController">
+        <joint_name>${joint}</joint_name>
+        <topic>/arm/${joint}/cmd</topic>
+        <p_gain>${p}</p_gain>
+        <i_gain>${i}</i_gain>
+        <d_gain>${d}</d_gain>
+        <i_max>30</i_max>
+        <i_min>-30</i_min>
+        <cmd_max>${arm_effort}</cmd_max>
+        <cmd_min>${-arm_effort}</cmd_min>
+        <initial_position>0.0</initial_position>
+      </plugin>
+    </gazebo>
+  </xacro:macro>
+
+  <!-- Publishes every joint's state on /joint_states (bridged to ROS for
+       robot_state_publisher): wheels, rockers and arm joints. -->
+  <xacro:macro name="joint_state_publisher">
+    <gazebo>
+      <plugin filename="gz-sim-joint-state-publisher-system" name="gz::sim::systems::JointStatePublisher">
+        <topic>/joint_states</topic>
+      </plugin>
+    </gazebo>
+  </xacro:macro>
+
+</robot>

@@ -1,0 +1,97 @@
+<?xml version="1.0"?>
+<!-- Chassis: base_footprint (ground reference), base_link (body box) and the two
+     top compartments: an open-top sand bin (middle) and an enclosed electronics
+     box (rear). The front of the deck carries the arm mount (arm.xacro). -->
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <!-- Thin box (visual + collision) inside a link, positioned in that link's frame. -->
+  <xacro:macro name="panel" params="name xyz size material">
+    <visual>
+      <origin xyz="${xyz}"/>
+      <geometry><box size="${size}"/></geometry>
+      <material name="${material}"/>
+    </visual>
+    <collision name="${name}">
+      <origin xyz="${xyz}"/>
+      <geometry><box size="${size}"/></geometry>
+    </collision>
+  </xacro:macro>
+
+  <xacro:macro name="rover_chassis">
+    <link name="base_footprint"/>
+    <joint name="base_footprint_joint" type="fixed">
+      <parent link="base_footprint"/>
+      <child link="base_link"/>
+      <origin xyz="0 0 ${base_z}" rpy="0 0 0"/>
+    </joint>
+    <!-- base_footprint_joint stays lumpable: base_footprint has no <inertial>
+         (massless ground reference), and forcing it to stay a separate link makes
+         SDFormat drop the whole model. Sensor joints keep their links via
+         keep_fixed_joint (rover_macros.xacro). -->
+    <link name="base_link">
+      <visual>
+        <geometry><box size="${chassis_length} ${chassis_width} ${chassis_height}"/></geometry>
+        <material name="chassis_grey"/>
+      </visual>
+      <collision>
+        <geometry><box size="${chassis_length} ${chassis_width} ${chassis_height}"/></geometry>
+      </collision>
+      <xacro:box_inertial mass="${chassis_mass}" x="${chassis_length}" y="${chassis_width}" z="${chassis_height}"/>
+    </link>
+    <xacro:lidar_self_filter link="base_link"/>
+
+    <!-- Open-top sand bin: floor is the chassis deck; four walls. -->
+    <xacro:property name="deck" value="${chassis_height/2.0}"/>
+    <xacro:property name="bin_len" value="${bin_x_max - bin_x_min}"/>
+    <link name="bin_link">
+      <xacro:panel name="wall_front" xyz="${bin_len/2.0 - bin_wall/2.0} 0 ${bin_height/2.0}"
+                   size="${bin_wall} ${bin_width} ${bin_height}" material="bin_steel"/>
+      <xacro:panel name="wall_rear" xyz="${-bin_len/2.0 + bin_wall/2.0} 0 ${bin_height/2.0}"
+                   size="${bin_wall} ${bin_width} ${bin_height}" material="bin_steel"/>
+      <xacro:panel name="wall_left" xyz="0 ${bin_width/2.0 - bin_wall/2.0} ${bin_height/2.0}"
+                   size="${bin_len} ${bin_wall} ${bin_height}" material="bin_steel"/>
+      <xacro:panel name="wall_right" xyz="0 ${-bin_width/2.0 + bin_wall/2.0} ${bin_height/2.0}"
+                   size="${bin_len} ${bin_wall} ${bin_height}" material="bin_steel"/>
+      <!-- thin-walled box: inertia of the bounding box at the bin's mass is a
+           fine approximation for a 2 kg part -->
+      <inertial>
+        <origin xyz="0 0 ${bin_height/2.0}"/>
+        <mass value="${bin_mass}"/>
+        <inertia ixx="${bin_mass/12.0*(bin_width*bin_width + bin_height*bin_height)}" ixy="0" ixz="0"
+                 iyy="${bin_mass/12.0*(bin_len*bin_len + bin_height*bin_height)}" iyz="0"
+                 izz="${bin_mass/12.0*(bin_len*bin_len + bin_width*bin_width)}"/>
+      </inertial>
+    </link>
+    <joint name="bin_joint" type="fixed">
+      <parent link="base_link"/>
+      <child link="bin_link"/>
+      <origin xyz="${(bin_x_min + bin_x_max)/2.0} 0 ${deck}"/>
+    </joint>
+
+    <!-- Enclosed electronics compartment (battery, compute, E-stop wiring). -->
+    <xacro:property name="elec_len" value="${elec_x_max - elec_x_min}"/>
+    <link name="electronics_link">
+      <visual>
+        <origin xyz="0 0 ${elec_height/2.0}"/>
+        <geometry><box size="${elec_len} ${elec_width} ${elec_height}"/></geometry>
+        <material name="electronics_blue"/>
+      </visual>
+      <collision>
+        <origin xyz="0 0 ${elec_height/2.0}"/>
+        <geometry><box size="${elec_len} ${elec_width} ${elec_height}"/></geometry>
+      </collision>
+      <inertial>
+        <origin xyz="0 0 ${elec_height/2.0}"/>
+        <mass value="${elec_mass}"/>
+        <inertia ixx="${elec_mass/12.0*(elec_width*elec_width + elec_height*elec_height)}" ixy="0" ixz="0"
+                 iyy="${elec_mass/12.0*(elec_len*elec_len + elec_height*elec_height)}" iyz="0"
+                 izz="${elec_mass/12.0*(elec_len*elec_len + elec_width*elec_width)}"/>
+      </inertial>
+    </link>
+    <joint name="electronics_joint" type="fixed">
+      <parent link="base_link"/>
+      <child link="electronics_link"/>
+      <origin xyz="${(elec_x_min + elec_x_max)/2.0} 0 ${deck}"/>
+    </joint>
+  </xacro:macro>
+</robot>

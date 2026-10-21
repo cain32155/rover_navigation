@@ -1,0 +1,206 @@
+# Single source of truth for arena geometry, obstacle randomization, mission goals
+# and the start-zone localization markers.
+#
+# Read by: launch/cac_sim.launch.py (world generation via cac_sim/arena_layout.py),
+# mission_state_machine, marker_localizer, arena_boundary_publisher, wall_filter.
+# The coordinate system is the arena/world frame described at the top of
+# worlds/cac_arena.sdf. The localization stack makes ROS `map` == this frame.
+#
+#   ros2 launch cac_sim cac_sim.launch.py seed:=42
+
+/**:
+  ros__parameters:
+    arena:
+      length: 9.0             # along X, inner wall faces at x = +-4.5
+      width: 5.0              # along Y, inner wall faces at y = +-2.5
+      sand_depth: 0.30        # thickness of the generated sand-bed tiles (rulebook: ~30 cm)
+
+    # Zone bounds as [x_min, x_max]; all zones span the full arena width in Y.
+    # The rulebook text gives no zone sizes (only a reference diagram); lengths
+    # sum to the 9 m arena. The 1.8 m start zone fits the rover at every N/S/E/W
+    # start heading with start_margin and room to turn in place.
+    zones:
+      starting_zone:     [-4.5, -2.7]
+      obstacle_zone:     [-2.7,  2.0]
+      excavation_zone:   [ 2.0,  3.5]
+      construction_zone: [ 3.5,  4.5]
+      berm_target: [4.0, 0.0]   # [x, y] centre of the berm/dump target (marker r=0.4 m)
+
+    robot:
+      # Footprint rectangle relative to base_footprint (x forward), i.e. the
+      # outer collision envelope in the stowed configuration. MUST match the
+      # `footprint` in config/nav2_params.yaml and urdf/ -- test/test_consistency.py
+      # checks all three.
+      footprint_front: 0.66
+      footprint_rear: 0.47
+      footprint_half_width: 0.37
+      # Wheel-centre x offset from base_footprint (validation tools use it to
+      # check wheels against crater bowls).
+      wheel_x_offset: 0.35
+      # Gap kept between the start footprint and every starting-zone boundary.
+      # Must be >= localization.keepout_band + Nav2 footprint_padding (+ a cell)
+      # or Nav2 sees the start pose as overlapping the lethal boundary band.
+      start_margin: 0.20
+      # Extra clearance beyond the turn-in-place circle (farthest footprint
+      # corner) kept from walls and obstacles at the start pose, so the
+      # localization spin can never touch anything.
+      spin_margin: 0.10
+      # Sum of every <inertial> mass in urdf/ (test_consistency checks it); the
+      # rulebook limit is 80 kg. Used for the BCP-mass estimate in the run summary.
+      mass_kg: 50.55
+
+    obstacles:
+      num_boulders: 3          # rulebook: "at least three"
+      num_craters: 3           # rulebook: "at least three"
+      boulder_diameter_min: 0.30   # rulebook: ~30-40 cm
+      boulder_diameter_max: 0.40
+      # Boulders are sunk by a random fraction of their radius so their height
+      # above the sand varies (rulebook: "varying heights").
+      boulder_bury_fraction_min: 0.0
+      boulder_bury_fraction_max: 0.4
+      # Rulebook: "Similar or smaller boulders may also be present in the
+      # excavation zone."
+      num_excavation_boulders: 1
+      excavation_boulder_diameter_min: 0.20
+      excavation_boulder_diameter_max: 0.30
+      # Craters are real depressions (cosine bowls). Diameter is the TOTAL
+      # rim-to-rim width (rulebook: "up to 40-50 cm"). Depth is not given by the
+      # rulebook; 5-15 cm is an assumption.
+      crater_diameter_min: 0.40
+      crater_diameter_max: 0.50
+      crater_depth_min: 0.05
+      crater_depth_max: 0.15
+      # Flat sand kept around each bowl inside its square mesh patch.
+      crater_patch_margin: 0.05
+      # Minimum centre-to-centre distance between obstacles. This alone does NOT
+      # guarantee passability (edge gaps can be < 0.4 m); the reachability check
+      # below does.
+      min_obstacle_clearance: 0.9
+      # Obstacle centres stay this far inside their zone's x-range and the walls.
+      zone_edge_margin: 0.35
+      # Layout acceptance: the real footprint grown by validation_margin must be
+      # able to reach every mission goal from the start pose (and come back);
+      # validation_wall_margin is kept to the walls (>= keepout band; equal to
+      # robot.start_margin so the start pose itself passes).
+      # Rejected layouts are redrawn deterministically from the seed.
+      validation_margin: 0.10
+      validation_wall_margin: 0.20
+      max_layout_attempts: 200
+
+    mission:
+      # Navigation goals [x, y, yaw] in the arena frame: where base_footprint
+      # parks, NOT the task targets. Chosen from the arm's reach (arm.xacro,
+      # config/arm_params.yaml):
+      #  - excavation_approach: the dig pose puts the bucket lip 0.93-1.08 m
+      #    ahead of base_footprint -> sand is taken at x = 3.28-3.43, inside the
+      #    excavation zone (sand may only come from there).
+      #  - construction_approach: stowed front edge 0.46 m into the construction
+      #    zone, 0.54 m from the east wall (0.37 m with the 0.06 m padding, outside the
+      #    0.11 m keep-out band); the pour lands 0.91 m ahead -> x = 4.21, on the berm
+      #    target (r = 0.4 m). Nav2 stops ~0.19 m short (goal tolerance 0.20 m): front
+      #    ~0.27 m across x = 3.5, pour at x ~ 4.02. At 3.15 the believed crossing was
+      #    only 0.11-0.14 m in all 303 E3/E4 arrivals while the x error reached 0.14 m:
+      #    24 arrivals were < 5 cm across by ground truth and one was 0.3 cm short (seed 9,
+      #    E4). At x = 3.05 the front was claimed 2 cm across while ground truth was 11 cm
+      #    short (seed 10, r4_3). The old goal (berm centre, x = 4.0) put the footprint
+      #    through the wall. The seeded layouts do not change (reachability re-checked).
+      #  - return_approach: start-zone centre, facing west so the camera sees the
+      #    start-zone markers again.
+      excavation_approach:   [2.35, 0.0, 0.0]
+      construction_approach: [3.30, 0.0, 0.0]
+      return_approach:       [-3.55, 0.0, 3.14159265]
+      # Arrival is accepted only when the localized pose is within these of the
+      # goal AND the zone condition for that leg holds.
+      arrival_xy_tolerance: 0.30
+      arrival_yaw_tolerance: 0.60
+      # excavation/construction: the localized footprint must cross the zone line
+      # by this much (ground truth, in gt_monitor, only needs "any part across")
+      zone_cross_margin: 0.10
+      max_goal_attempts: 3     # per leg, before the mission ends in FAILED
+      # Nav2 footprint_padding (test_consistency checks it): the escape motion after
+      # START_OCCUPIED clears the footprint as the planner sees it.
+      footprint_padding: 0.06
+      # Obstacle-zone survey after the marker fix, before the first leg: face each
+      # heading (deg, map frame, 0 = east) and hold still so the depth camera sees
+      # the ground next to the start zone. 30 deg steps with a 66 deg camera view
+      # cover about -93..+93 deg at 1.0-2.2 m ahead.
+      survey_headings: [-45.0, 0.0, 45.0]
+      survey_hold_sec: 0.6
+      survey_turn_rate: 0.50
+      survey_timeout_sec: 60.0
+      leg_timeout_sec: 240.0   # per attempt
+      # Excavate -> carry -> dump cycles. num_cycles is the MAXIMUM; another cycle
+      # starts only if elapsed mission time + the longest cycle so far + the return
+      # reserve fits time_budget_sec (rulebook prelims: 10 min run). Full Autonomy
+      # needs >= 2 full cycles for 600 points (rulebook, Autonomous Operations).
+      num_cycles: 2
+      time_budget_sec: 360.0
+      return_reserve_sec: 90.0  # kept for the return leg (measured 60-90 s + retries)
+      first_cycle_estimate_sec: 90.0   # until a cycle has been measured
+      # Between cycles: back straight up from the construction goal to the
+      # excavation goal (mission_logic.reverse_distance), costmap-checked.
+      reverse_speed: 0.20
+      reverse_timeout_sec: 20.0
+      max_dig_attempts: 2      # dig passes per cycle before the cycle is failed
+      # Dead-reckoning budget: no new cycle if the drift added by the cycles,
+      # 0.0136 m/rad x |rotation since the first excavation arrival|, would exceed
+      # drift_max after it. Markers are only seen from the start zone; seed 10 (Nav2
+      # loops of ~7.5 rad per cycle) drifted 0.14 -> 0.34 m over 6 cycles and a pour
+      # landed outside the berm target. Typical cycles turn 0-1.4 rad.
+      drift_per_rad: 0.0136
+      drift_max: 0.15
+      # Scan stops while crossing the obstacle zone: every scan_spacing m the Nav2 goal
+      # is paused, the rover faces heading + each offset (costmap-checked), holds, and
+      # resumes the same goal. The +-33 deg camera otherwise sees ground beside the
+      # route only at the image edge (seed 12: crater_2, a wheel in it after the route
+      # turned toward it). [] disables.
+      scan_spacing: 1.2
+      scan_offsets_deg: []
+      scan_hold_sec: 1.0
+      scan_timeout_sec: 30.0
+
+    # Sand accounting (cac_sim/material_model.py). SIMULATED ESTIMATES: Gazebo's
+    # sand is rigid and does not move; these parameters turn arm actions into
+    # volumes. Assumptions are marked; bucket size comes from urdf/arm.xacro.
+    material:
+      bucket_capacity_l: 1.183     # 0.13 x 0.14 x 0.065 m bucket interior (struck)
+      fill_factor: 0.8             # ASSUMPTION: fraction filled by one pass
+      bulk_density_kg_m3: 1500.0   # ASSUMPTION: loose dry sand
+      max_cut_height: 0.05         # lip within 5 cm of the surface at the dig pose
+      dig_cell: 0.25               # dig sites: square cells of the excavation zone
+      max_dig_depth: 0.15          # ASSUMPTION: usable depth per site (half the 30 cm bed)
+      # arm sequence indices (0-based, arm_params.yaml): the lip is located at the
+      # cut pose and the scoop is credited when the curl pose is reached; the
+      # dump is credited when the pour pose is reached.
+      cut_pose_index: 1
+      curl_pose_index: 2
+      pour_pose_index: 1
+
+    localization:
+      # Width of the band inside each wall whose LiDAR returns are discarded
+      # before mapping/costmaps/collision monitor (walls must not be used for
+      # navigation or collision avoidance -- rulebook Autonomy Rule 3).
+      wall_filter_band: 0.30
+      # Lethal band inside each wall in the a-priori arena-boundary costmap
+      # layer (keeps the planner off the walls without sensing them). The
+      # margin to a wall is keepout_band + footprint_padding = 0.17 m (was
+      # 0.15 + 0.02 before the padding grew to 0.06).
+      keepout_band: 0.11
+
+    markers:
+      # ArUco markers placed per "Regulations on Mounting Beacons and Markers":
+      # max 5, <= 25x25 cm each, <= 60 cm high; one on the wall attached to the
+      # start zone, the others on the start-zone frame along its two sides
+      # (interpreted as the north and south boundaries of the starting zone).
+      # `size` is the black square edge, `board_size` the whole printed board.
+      # poses = [x, y, z, yaw] per id (flattened -- ROS parameters cannot hold
+      # lists of dicts): marker face centre; yaw = direction the face points.
+      dictionary: DICT_4X4_50
+      size: 0.20
+      board_size: 0.25
+      ids: [0, 1, 2, 3, 4]
+      poses: [-4.499, 0.0, 0.30, 0.0,
+              -4.05, 2.499, 0.35, -1.5707963,
+              -3.15, 2.499, 0.35, -1.5707963,
+              -4.05, -2.499, 0.35, 1.5707963,
+              -3.15, -2.499, 0.35, 1.5707963]

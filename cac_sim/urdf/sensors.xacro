@@ -1,0 +1,156 @@
+<?xml version="1.0"?>
+<!-- Sensors: LiDAR, IMU, RGB-D camera. Each macro emits the sensor's link, its
+     fixed joint to `parent` at the given mount pose, and its Gazebo <sensor>.
+
+     No GPS, ultrasonic, touch, or magnetometer/compass sensor is modelled -
+     those are disallowed by the competition rules. Only LiDAR, IMU (gyro +
+     accelerometer, no magnetic heading used downstream), and an RGB-D camera.
+
+     Every sensor publishes on an absolute ("/...") topic so the ros_gz_bridge
+     config can name it exactly instead of needing Gazebo's auto-scoped sensor
+     path, and sets gz_frame_id to its plain link name, overriding gz-sim's
+     default scoped frame_id (e.g. "cac_rover/lidar_link/lidar_sensor") -
+     useless for TF, since robot_state_publisher only ever publishes the plain
+     link name. -->
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <!-- LiDAR: primary boulder-detection sensor. Mounted LOW (scan plane 0.10 m
+       above ground, hung under the chassis): the boulders are short (30-40 cm,
+       partially buried, as little as ~0.18 m visible), and a single-plane LiDAR
+       mounted high (tried at ~0.50 m first) scanned clean over all of them.
+       Craters are depressions a planar LiDAR can never see; the RGB-D camera
+       detects them (cac_sim/crater_detector.py). -->
+  <xacro:macro name="lidar" params="parent xyz rpy">
+    <link name="lidar_link">
+      <visual><geometry><cylinder radius="0.05" length="0.06"/></geometry><material name="sensor_orange"/></visual>
+      <collision><geometry><cylinder radius="0.05" length="0.06"/></geometry></collision>
+      <inertial><mass value="0.3"/><inertia ixx="0.0003" ixy="0" ixz="0" iyy="0.0003" iyz="0" izz="0.0003"/></inertial>
+    </link>
+    <joint name="lidar_joint" type="fixed">
+      <parent link="${parent}"/>
+      <child link="lidar_link"/>
+      <origin xyz="${xyz}" rpy="${rpy}"/>
+    </joint>
+    <xacro:keep_fixed_joint joint="lidar_joint"/>
+
+    <!-- lidar_link's own tiny housing sits right at the scan origin; min_range
+         (0.12m, below) already excludes self-returns this close, but it's
+         masked anyway for consistency with the other self-filtered links. -->
+    <gazebo reference="lidar_link">
+      <visual>
+        <visibility_flags>${self_filter_flags}</visibility_flags>
+      </visual>
+      <sensor name="lidar_sensor" type="gpu_lidar">
+        <topic>/scan</topic>
+        <gz_frame_id>lidar_link</gz_frame_id>
+        <update_rate>10</update_rate>
+        <always_on>true</always_on>
+        <visualize>false</visualize>
+        <!-- visibility_mask restricted to bit 0 only: combined with every
+             self-filtered rover visual having bit 0 CLEARED (and every
+             external object left at the SDF default of all-bits-set, which
+             still includes bit 0), this sensor sees every external obstacle
+             normally but none of the rover's own body/wheels. -->
+        <lidar>
+          <scan>
+            <!-- 360-degree planar scan: obstacle detection must not depend on
+                 boulders/craters being in front of the robot only. -->
+            <horizontal>
+              <samples>360</samples>
+              <resolution>1.0</resolution>
+              <min_angle>-3.14159</min_angle>
+              <max_angle>3.14159</max_angle>
+            </horizontal>
+          </scan>
+          <range>
+            <!-- max range 8m comfortably covers the obstacle zone depth -->
+            <min>0.12</min>
+            <max>8.0</max>
+            <resolution>0.01</resolution>
+          </range>
+          <noise><type>gaussian</type><mean>0.0</mean><stddev>0.01</stddev></noise>
+          <visibility_mask>${lidar_visibility_mask}</visibility_mask>
+        </lidar>
+      </sensor>
+    </gazebo>
+  </xacro:macro>
+
+  <!-- IMU: rigidly fixed near the robot's centroid so its readings reflect
+       whole-body motion rather than chassis flex/overhang. -->
+  <xacro:macro name="imu" params="parent xyz rpy">
+    <link name="imu_link">
+      <inertial><mass value="0.05"/><inertia ixx="1e-5" ixy="0" ixz="0" iyy="1e-5" iyz="0" izz="1e-5"/></inertial>
+    </link>
+    <joint name="imu_joint" type="fixed">
+      <parent link="${parent}"/>
+      <child link="imu_link"/>
+      <origin xyz="${xyz}" rpy="${rpy}"/>
+    </joint>
+    <xacro:keep_fixed_joint joint="imu_joint"/>
+
+    <gazebo reference="imu_link">
+      <sensor name="imu_sensor" type="imu">
+        <topic>/imu</topic>
+        <gz_frame_id>imu_link</gz_frame_id>
+        <update_rate>100</update_rate>
+        <always_on>true</always_on>
+        <imu>
+          <!-- Modest noise only - this is NOT a magnetometer-fused IMU. The
+               orientation field downstream (robot_localization) is configured to
+               ignore absolute yaw from this sensor, since real low-cost IMUs
+               derive yaw via a magnetometer, which the rules disallow. -->
+          <angular_velocity>
+            <x><noise type="gaussian"><mean>0</mean><stddev>0.003</stddev></noise></x>
+            <y><noise type="gaussian"><mean>0</mean><stddev>0.003</stddev></noise></y>
+            <z><noise type="gaussian"><mean>0</mean><stddev>0.003</stddev></noise></z>
+          </angular_velocity>
+          <linear_acceleration>
+            <x><noise type="gaussian"><mean>0</mean><stddev>0.03</stddev></noise></x>
+            <y><noise type="gaussian"><mean>0</mean><stddev>0.03</stddev></noise></y>
+            <z><noise type="gaussian"><mean>0</mean><stddev>0.03</stddev></noise></z>
+          </linear_acceleration>
+        </imu>
+      </sensor>
+    </gazebo>
+  </xacro:macro>
+
+  <!-- RGB-D camera: forward-facing, for close-range obstacle/berm perception
+       and (later) excavation-target identification. Mounted at the front edge,
+       tilted slightly down so the near field (where craters matter most) is
+       in view instead of pointing at the horizon. -->
+  <xacro:macro name="rgbd_camera" params="parent xyz rpy">
+    <link name="camera_link">
+      <visual><geometry><box size="0.04 0.09 0.04"/></geometry><material name="sensor_orange"/></visual>
+      <collision><geometry><box size="0.04 0.09 0.04"/></geometry></collision>
+      <inertial><mass value="0.2"/><inertia ixx="1e-4" ixy="0" ixz="0" iyy="1e-4" iyz="0" izz="1e-4"/></inertial>
+    </link>
+    <joint name="camera_joint" type="fixed">
+      <parent link="${parent}"/>
+      <child link="camera_link"/>
+      <origin xyz="${xyz}" rpy="${rpy}"/>
+    </joint>
+    <xacro:keep_fixed_joint joint="camera_joint"/>
+    <!-- Optical frame follows the ROS camera convention (Z forward, X right, Y down) -->
+    <link name="camera_optical_link"/>
+    <joint name="camera_optical_joint" type="fixed">
+      <parent link="camera_link"/>
+      <child link="camera_optical_link"/>
+      <origin xyz="0 0 0" rpy="${-1.5708} 0 ${-1.5708}"/>
+    </joint>
+
+    <gazebo reference="camera_link">
+      <sensor name="rgbd_camera" type="rgbd_camera">
+        <topic>/camera</topic>
+        <gz_frame_id>camera_link</gz_frame_id>
+        <update_rate>15</update_rate>
+        <always_on>true</always_on>
+        <camera>
+          <horizontal_fov>1.15</horizontal_fov>
+          <image><width>640</width><height>480</height></image>
+          <clip><near>0.1</near><far>10.0</far></clip>
+        </camera>
+      </sensor>
+    </gazebo>
+  </xacro:macro>
+
+</robot>
